@@ -1,0 +1,12 @@
+[project]
+name = "adk-chat-ui"
+version = "0.1.0"
+description = "Simple chat UI to integrate with adk api server"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "flask>=3.1.2",
+    "plotly>=6.5.0",
+    "python-dotenv>=1.2.1",
+    "requests>=2.32.5",
+]

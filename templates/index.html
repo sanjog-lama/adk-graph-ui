@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ADK Chat Interface</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <!-- External Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h2>ADK Chat</h2>
+                <select class="agent-selector" id="agentSelector">
+                    <option value="">Select Agent...</option>
+                </select>
+            </div>
+            <div class="sessions-container" id="sessionsContainer">
+                <div class="empty-state" style="padding: 20px; text-align: center;">
+                    <p>Select an agent to start</p>
+                </div>
+            </div>
+            <button class="new-session-btn" id="newSessionBtn">+ New Session</button>
+        </div>
+        
+        <div class="chat-area">
+            <div class="chat-header">
+                <h1 id="chatTitle">Welcome to ADK Chat</h1>
+                <button class="delete-btn" id="deleteSessionBtn" style="display: none;">Delete Session</button>
+            </div>
+            
+            <div class="messages" id="messagesContainer">
+                <div class="empty-state">
+                    <div class="empty-state-icon">💬</div>
+                    <h2>Start a conversation</h2>
+                    <p>Select an agent and create a new session to begin</p>
+                </div>
+            </div>
+            
+            <div class="input-area">
+                <form class="input-form" id="messageForm">
+                    <input 
+                        type="text" 
+                        class="message-input" 
+                        id="messageInput" 
+                        placeholder="Type your message..."
+                        disabled
+                    >
+                    <button type="submit" class="send-btn" id="sendBtn" disabled>Send</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Your application JavaScript -->
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
