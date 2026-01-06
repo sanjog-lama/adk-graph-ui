@@ -171,25 +171,29 @@ const AnalyticsParser = {
             return null;
         }
 
-        // Search through events for analytics_output in stateDelta
         let analyticsData = null;
-        
-        // full_response is an array of events
-        if (Array.isArray(fullResponse)) {
-            Utils.log('AnalyticsParser', `Searching through ${fullResponse.length} events for analytics data`);
-            
-            for (let i = 0; i < fullResponse.length; i++) {
-                const event = fullResponse[i];
-                const stateDelta = event?.actions?.stateDelta;
-                
-                if (stateDelta && stateDelta.analytics_output) {
-                    analyticsData = stateDelta.analytics_output;
+
+        for (let i = 0; i < fullResponse.length; i++) {
+            const event = fullResponse[i];
+
+            // Try multiple possible paths
+            const possiblePaths = [
+                event?.actions?.stateDelta?.analytics_output,
+                event?.stateDelta?.analytics_output,
+                event?.analytics_output
+            ];
+
+            for (const data of possiblePaths) {
+                if (data !== undefined && data !== null) {
+                    analyticsData = data;
                     Utils.log('AnalyticsParser', `Found analytics_output in event ${i}:`, analyticsData);
                     break;
                 }
             }
+
+            if (analyticsData) break;
         }
-        
+
         if (analyticsData) {
             return this.parseAnalyticsData(analyticsData);
         } else {
@@ -199,70 +203,44 @@ const AnalyticsParser = {
     },
 
     /**
-     * Parse analytics data - EXACT copy of original working logic
+     * Parse analytics data safely (handles strings, objects, and JSON code blocks)
      */
     parseAnalyticsData(analyticsData) {
         let jsonData = null;
-        
-        // Try to extract JSON from markdown code block first
-        const regex = /```json([\s\S]*?)```/;
-        const match = analyticsData.match(regex);
-        
-        if (match && match[1]) {
-            // Case 1: JSON wrapped in markdown code blocks
+
+        if (typeof analyticsData === 'object' && analyticsData !== null) {
+            // Already an object
+            jsonData = analyticsData;
+            Utils.log('AnalyticsParser', 'Analytics data is already an object');
+        } else if (typeof analyticsData === 'string') {
+            // Try extracting JSON from markdown code block
+            const codeBlockRegex = /```json([\s\S]*?)```/;
+            const match = analyticsData.match(codeBlockRegex);
+
+            let jsonString = match?.[1] || analyticsData;
+
             try {
-                jsonData = JSON.parse(match[1].trim());
-                Utils.log('AnalyticsParser', 'Successfully parsed JSON from markdown code block');
+                jsonData = JSON.parse(jsonString.trim());
+                Utils.log('AnalyticsParser', 'Successfully parsed analytics data as JSON');
             } catch (err) {
-                Utils.error('AnalyticsParser', 'Failed to parse JSON from code block:', err);
-                Utils.error('AnalyticsParser', 'Raw JSON string length:', match[1].length);
-                Utils.error('AnalyticsParser', 'Raw JSON string:', match[1]);
-                
-                // Try to fix common JSON issues
-                Utils.log('AnalyticsParser', 'Attempting to fix JSON...');
+                Utils.error('AnalyticsParser', 'Failed to parse JSON:', err);
+
+                // Attempt to fix common issues (trailing commas, extra spaces)
                 try {
-                    // Remove trailing comma before closing braces/brackets
-                    let fixedJson = match[1].trim()
-                        .replace(/,(\s*[}\]])/g, '$1')
-                        .replace(/\s+/g, ' ');
+                    const fixedJson = jsonString
+                        .replace(/,(\s*[}\]])/g, '$1') // remove trailing commas
+                        .trim();
                     jsonData = JSON.parse(fixedJson);
-                    Utils.log('AnalyticsParser', 'Successfully parsed after fixing JSON');
+                    Utils.log('AnalyticsParser', 'Successfully parsed JSON after fixing common issues');
                 } catch (err2) {
-                    Utils.error('AnalyticsParser', 'Still failed after attempting to fix:', err2);
+                    Utils.error('AnalyticsParser', 'Still failed after fixing:', err2);
+                    jsonData = null;
                 }
             }
         } else {
-            // Case 2: JSON is already a plain object or string (not in code blocks)
-            Utils.log('AnalyticsParser', 'No markdown code block found, trying to parse as direct JSON');
-            try {
-                // If it's already an object, use it directly
-                if (typeof analyticsData === 'object' && analyticsData !== null) {
-                    jsonData = analyticsData;
-                    Utils.log('AnalyticsParser', 'Analytics data is already an object');
-                } else if (typeof analyticsData === 'string') {
-                    // Try to parse as JSON string
-                    jsonData = JSON.parse(analyticsData);
-                    Utils.log('AnalyticsParser', 'Successfully parsed analytics data as JSON string');
-                }
-            } catch (err) {
-                Utils.error('AnalyticsParser', 'Failed to parse analytics data:', err);
-                Utils.error('AnalyticsParser', 'Analytics data type:', typeof analyticsData);
-                Utils.error('AnalyticsParser', 'Analytics data length:', typeof analyticsData === 'string' ? analyticsData.length : 'N/A');
-                
-                // Try to fix and parse
-                if (typeof analyticsData === 'string') {
-                    try {
-                        let fixedJson = analyticsData.trim()
-                            .replace(/,(\s*[}\]])/g, '$1');
-                        jsonData = JSON.parse(fixedJson);
-                        Utils.log('AnalyticsParser', 'Successfully parsed after fixing direct JSON');
-                    } catch (err2) {
-                        Utils.error('AnalyticsParser', 'Still failed after attempting to fix:', err2);
-                    }
-                }
-            }
+            Utils.error('AnalyticsParser', 'analyticsData is neither object nor string', analyticsData);
         }
-        
+
         return jsonData;
     }
 };
@@ -529,12 +507,8 @@ const UIRenderer = {
                     
                     ChartRenderer.renderAnalysisChart(jsonData, container);
                 } else {
-                    Utils.error('UIRenderer', 'Could not extract valid JSON data from analytics_output');
-                    // Show error message to user
-                    const errorDiv = document.createElement('div');
-                    errorDiv.className = 'message assistant';
-                    errorDiv.innerHTML = '<div class="message-content" style="background: #fff3cd; border-color: #ffc107;"><strong>⚠️ Chart Rendering Error</strong><br>Unable to parse analytics data. The response may be incomplete or malformed.</div>';
-                    container.appendChild(errorDiv);
+                    // Do NOT show chart error if jsonData is null because analytics_output is just missing
+                    Utils.log('UIRenderer', 'No analytics_output found; skipping chart rendering.');
                 }
             }
         });
