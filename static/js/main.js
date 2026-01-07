@@ -4,7 +4,7 @@
 
 const AppState = {
     currentAgent: '',
-    currentUserId: `user_${Date.now()}`,
+    currentUserId: `user_1767786285796`,
     currentSessionId: null,
     sessions: {},
     
@@ -623,18 +623,31 @@ const AppController = {
      */
     async selectSession(sessionId) {
         AppState.currentSessionId = sessionId;
-        
-        // Update UI
+
+        // Update sidebar UI
         UIRenderer.renderSessions(
             AppState.sessions,
             AppState.currentSessionId,
             this.selectSession.bind(this)
         );
         UIRenderer.updateUIState(true);
-        
-        // Load messages
-        if (AppState.sessions[sessionId]?.messages) {
+
+        try {
+            // Fetch messages for this session from backend
+            const sessionData = await ApiService.fetchWithError(
+                `/api/session/${sessionId}?agent=${AppState.currentAgent}&user=${AppState.currentUserId}`
+            );
+
+            // Update local state
+            AppState.sessions[sessionId] = {
+                ...AppState.sessions[sessionId],
+                messages: sessionData.messages || []
+            };
+
+            // Render messages
             UIRenderer.renderMessages(AppState.sessions[sessionId].messages);
+        } catch (err) {
+            Utils.showNotification('Failed to load session messages', 'error');
         }
     },
 

@@ -43,6 +43,41 @@ class ADKService:
         except requests.RequestException as e:
             logger.error(f"Failed to delete session: {e}")
             return False
+        
+    def get_sessions(self, agent: str, user_id: str) -> dict:
+        """Fetch all sessions for a user from ADK persistent endpoint."""
+        try:
+            response = requests.get(
+                f'{self.api_base}/apps/{agent}/users/{user_id}/sessions',
+                timeout=5
+            )
+            response.raise_for_status()
+            sessions_list = response.json()  # assume API returns a list of sessions
+
+            # Convert list to dict keyed by sessionId for frontend state
+            sessions = {}
+            for s in sessions_list:
+                sessions[s['sessionId']] = {
+                    'created': s.get('created', None),
+                    'messages': s.get('messages', [])
+                }
+            return sessions
+        except requests.RequestException as e:
+            logger.error(f"Failed to fetch sessions: {e}")
+            return {}
+
+    def get_single_session(self, agent: str, user_id: str, session_id: str) -> dict:
+        """Fetch a single session with all messages."""
+        try:
+            response = requests.get(
+                f'{self.api_base}/apps/{agent}/users/{user_id}/sessions/{session_id}',
+                timeout=5
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            logger.error(f"Failed to fetch session {session_id}: {e}")
+            return {}
     
     def send_message(self, agent: str, user_id: str, session_id: str, 
                     message: str) -> Tuple[Optional[str], Optional[dict]]:

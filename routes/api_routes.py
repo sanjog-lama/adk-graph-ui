@@ -14,8 +14,24 @@ def create_api_blueprint(adk_service, session_service):
     def get_sessions():
         agent = request.args.get('agent')
         user_id = request.args.get('user')
-        sessions = session_service.get_user_sessions(agent, user_id)
-        return jsonify(sessions)
+        
+        try:
+            # Fetch sessions from ADK backend
+            sessions = adk_service.get_sessions(agent, user_id)
+            return jsonify(sessions)
+        except Exception as e:
+            return jsonify({'status': 'error', 'message': str(e)}), 500
+        
+    @api_bp.route('/session/<session_id>')
+    def get_session(session_id):
+        agent = request.args.get('agent')
+        user_id = request.args.get('user')
+        
+        try:
+            session_data = adk_service.get_single_session(agent, user_id, session_id)
+            return jsonify(session_data)
+        except Exception as e:
+            return jsonify({'status': 'error', 'message': str(e)}), 500
     
     @api_bp.route('/create-session', methods=['POST'])
     def create_session():
