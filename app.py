@@ -1,13 +1,19 @@
+import logging
+from utils.logger import setup_logger
+
+# Configure logging FIRST
+setup_logger()  # This configures the root logger
+
+# Get logger for app.py
+logger = logging.getLogger(__name__)
+
+# NOW import other modules (they'll inherit the logging config)
 from flask import Flask
 from config import Config
 from routes.api_routes import api_bp
 from routes.view_routes import view_bp
 from services.session_service import SessionService
 from services.adk_service import ADKService
-from utils.logger import setup_logger
-
-# Initialize logger
-logger = setup_logger(__name__)
 
 # Create Flask app
 app = Flask(__name__)

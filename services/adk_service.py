@@ -3,6 +3,7 @@ import re
 import json
 from typing import Dict, Optional, Tuple
 import logging
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -45,39 +46,118 @@ class ADKService:
             return False
         
     def get_sessions(self, agent: str, user_id: str) -> dict:
-        """Fetch all sessions for a user from ADK persistent endpoint."""
+        """Fetch all sessions metadata for a user from ADK."""
+        url = f'{self.api_base}/apps/{agent}/users/{user_id}/sessions'
         try:
-            response = requests.get(
-                f'{self.api_base}/apps/{agent}/users/{user_id}/sessions',
-                timeout=5
-            )
-            response.raise_for_status()
-            sessions_list = response.json()  # assume API returns a list of sessions
+            logger.info(f"Fetching sessions from ADK backend: {url}")
+            response = requests.get(url, timeout=5)
+            logger.info(f"Received HTTP {response.status_code} from ADK backend")
 
-            # Convert list to dict keyed by sessionId for frontend state
+            response.raise_for_status()
+
+            sessions_list = response.json()
+            # logger.info(f"Raw sessions response: {sessions_list}")
+
+            # Convert list to dict with metadata only
             sessions = {}
             for s in sessions_list:
-                sessions[s['sessionId']] = {
-                    'created': s.get('created', None),
-                    'messages': s.get('messages', [])
+                session_id = s.get('id')
+                
+                sessions[session_id] = {
+                    'sessionId': session_id,  # Keep consistent naming
+                    'created': s.get('lastUpdateTime'),
+                    'appName': s.get('appName'),
+                    'userId': s.get('userId'),
+                    'hasState': bool(s.get('state')),
+                    'hasEvents': len(s.get('events', [])) > 0,
+                    'lastUpdateTime': s.get('lastUpdateTime')
                 }
+
+            logger.info(f"Processed {len(sessions)} sessions (metadata only)")
             return sessions
+
         except requests.RequestException as e:
-            logger.error(f"Failed to fetch sessions: {e}")
+            logger.error(f"Failed to fetch sessions from {url}: {e}")
+            return {}
+        except Exception as e:
+            logger.error(f"Error processing sessions: {e}")
             return {}
 
     def get_single_session(self, agent: str, user_id: str, session_id: str) -> dict:
-        """Fetch a single session with all messages."""
+        """Fetch a single session with all messages, merging analytics output if present."""
         try:
             response = requests.get(
                 f'{self.api_base}/apps/{agent}/users/{user_id}/sessions/{session_id}',
                 timeout=5
             )
             response.raise_for_status()
-            return response.json()
+            session_data = response.json()
+
+            logger.info(f"Raw sessions response: {session_data}")
+
+            # Extract messages from session events
+            messages = self._extract_messages_from_session(session_data)
+
+            # Merge analytics output into last assistant message if exists
+            analytics_output = session_data.get("state", {}).get("analytics_output")
+            if analytics_output and messages:
+                # find last assistant message
+                for msg in reversed(messages):
+                    if msg["role"] == "assistant":
+                        msg["content"] += f"\n\n{analytics_output}"
+                        break
+
+            return {
+                "sessionId": session_id,
+                "messages": messages,
+                "metadata": {
+                    "appName": session_data.get("appName"),
+                    "userId": session_data.get("userId"),
+                    "created": session_data.get("lastUpdateTime"),
+                    "state": session_data.get("state", {}),
+                    "events": session_data.get("events", [])
+                }
+            }
+
         except requests.RequestException as e:
             logger.error(f"Failed to fetch session {session_id}: {e}")
-            return {}
+            return {"sessionId": session_id, "messages": [], "error": str(e)}
+        except Exception as e:
+            logger.error(f"Error processing session {session_id}: {e}")
+            return {"sessionId": session_id, "messages": [], "error": str(e)}
+
+
+    def _extract_messages_from_session(self, session_data: dict) -> list:
+        """Extract messages from session events into standardized format."""
+        messages = []
+        events = session_data.get("events", [])
+
+        for event in events:
+            content = event.get("content", {})
+            parts = content.get("parts", [])
+            if not parts:
+                continue
+
+            text_parts = []
+            for part in parts:
+                if "text" in part:
+                    text_parts.append(part["text"])
+            if not text_parts:
+                continue
+
+            # Treat any non-user author as assistant
+            role = "user" if event.get("author") == "user" else "assistant"
+
+            messages.append({
+                "role": role,
+                "content": "\n".join(text_parts),
+                "timestamp": datetime.fromtimestamp(
+                    event.get("timestamp", 0)
+                ).isoformat()
+            })
+
+        return messages
+
     
     def send_message(self, agent: str, user_id: str, session_id: str, 
                     message: str) -> Tuple[Optional[str], Optional[dict]]:

@@ -26,19 +26,24 @@ class SessionService:
             self._sessions_store[key].pop(session_id, None)
     
     def add_message(self, agent: str, user_id: str, session_id: str, 
-                   role: str, content: str, full_response: Optional[dict] = None):
+                    role: str, content: str, full_response: Optional[dict] = None):
         key = self.get_sessions_key(agent, user_id)
         if key not in self._sessions_store:
             self._sessions_store[key] = {}
         if session_id not in self._sessions_store[key]:
             self._sessions_store[key][session_id] = {'messages': []}
         
-        self._sessions_store[key][session_id]['messages'].append({
+        message = {
             'role': role,
             'content': content,
             'full_response': full_response,
             'timestamp': datetime.now().isoformat()
-        })
+        }
+        
+        self._sessions_store[key][session_id]['messages'].append(message)
+        
+        return message
+
     
     def get_messages(self, agent: str, user_id: str, session_id: str):
         key = self.get_sessions_key(agent, user_id)

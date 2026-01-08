@@ -1,5 +1,9 @@
 from flask import Blueprint, request, jsonify
 import traceback
+from utils.logger import setup_logger
+
+# Initialize logger
+logger = setup_logger(__name__)
 
 def create_api_blueprint(adk_service, session_service):
     """Factory function to create API blueprint with service instances"""
@@ -18,6 +22,16 @@ def create_api_blueprint(adk_service, session_service):
         try:
             # Fetch sessions from ADK backend
             sessions = adk_service.get_sessions(agent, user_id)
+             # ---- SAFE LOGGING (summary only) ----
+            if isinstance(sessions, dict):
+                logger.info(
+                    f"Sessions fetched successfully | count={len(sessions)} | "
+                    f"session_ids={list(sessions.keys())}"
+                )
+            else:
+                logger.warning(
+                    f"Unexpected sessions type: {type(sessions)} | value={sessions}"
+                )
             return jsonify(sessions)
         except Exception as e:
             return jsonify({'status': 'error', 'message': str(e)}), 500
