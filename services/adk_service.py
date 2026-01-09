@@ -93,7 +93,7 @@ class ADKService:
             response.raise_for_status()
             session_data = response.json()
 
-            logger.info(f"Raw sessions response: {session_data}")
+            # logger.info(f"Raw sessions response: {session_data}")
 
             # Extract messages from session events
             messages = self._extract_messages_from_session(session_data)
@@ -168,12 +168,13 @@ class ADKService:
             'newMessage': {
                 'role': 'user',
                 'parts': [{'text': message}]
-            }
+            },
+            "streaming": True,
         }
         
         try:
             response = requests.post(
-                f'{self.api_base}/run',
+                f'{self.api_base}/run_sse',
                 json=payload,
                 timeout=600
             )

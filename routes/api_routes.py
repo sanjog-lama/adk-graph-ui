@@ -120,5 +120,6 @@ def create_api_blueprint(adk_service, session_service):
     
     return api_bp
 
+
 # Alias for backward compatibility
 api_bp = create_api_blueprint

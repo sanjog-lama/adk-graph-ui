@@ -123,28 +123,74 @@ const ApiService = {
 
 const AnalyticsParser = {
     extractAnalyticsData(fullResponse) {
-        if (!fullResponse || !Array.isArray(fullResponse)) {
-            Utils.log('AnalyticsParser', 'No full_response or not an array');
-            return null;
-        }
+        // Case 1: Try extracting from full_response array structure
+        if (fullResponse && Array.isArray(fullResponse)) {
+            for (const event of fullResponse) {
+                const possiblePaths = [
+                    event?.actions?.stateDelta?.analytics_output,
+                    event?.stateDelta?.analytics_output,
+                    event?.analytics_output
+                ];
 
-        for (const event of fullResponse) {
-            const possiblePaths = [
-                event?.actions?.stateDelta?.analytics_output,
-                event?.stateDelta?.analytics_output,
-                event?.analytics_output
-            ];
-
-            for (const data of possiblePaths) {
-                if (data !== undefined && data !== null) {
-                    Utils.log('AnalyticsParser', 'Found analytics_output:', data);
-                    return this.parseAnalyticsData(data);
+                for (const data of possiblePaths) {
+                    if (data !== undefined && data !== null) {
+                        Utils.log('AnalyticsParser', 'Found analytics_output in full_response:', data);
+                        return this.parseAnalyticsData(data);
+                    }
                 }
             }
         }
+        
+        // Case 2: Try extracting from message content string
+        if (typeof fullResponse === 'string') {
+            Utils.log('AnalyticsParser', 'Attempting to extract from content string');
+            return this.extractFromContentString(fullResponse);
+        }
 
-        Utils.log('AnalyticsParser', 'No analytics_output found in message');
+        Utils.log('AnalyticsParser', 'No analytics_output found');
         return null;
+    },
+
+    extractFromContentString(content) {
+        // 1️⃣ Try fenced ```json blocks first (existing behavior)
+        const codeBlockRegex = /```json\s*([\s\S]*?)\s*```/g;
+        const matches = [...content.matchAll(codeBlockRegex)];
+
+        for (const match of matches) {
+            try {
+                const parsed = JSON.parse(match[1].trim());
+                if (this.isAnalyticsData(parsed)) {
+                    Utils.log('AnalyticsParser', 'Extracted analytics from fenced JSON');
+                    return parsed;
+                }
+            } catch (e) {}
+        }
+
+        // 2️⃣ Fallback: extract LAST JSON object in text
+        try {
+            const jsonMatch = content.match(/\{[\s\S]*\}$/);
+            if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[0]);
+                if (this.isAnalyticsData(parsed)) {
+                    Utils.log('AnalyticsParser', 'Extracted analytics from raw JSON');
+                    return parsed;
+                }
+            }
+        } catch (err) {
+            Utils.error('AnalyticsParser', 'Raw JSON parse failed', err);
+        }
+
+        return null;
+    },
+
+    isAnalyticsData(data) {
+        // Check if the parsed JSON has analytics-specific fields
+        return data && typeof data === 'object' && (
+            data.hasOwnProperty('visualization_hints') ||
+            data.hasOwnProperty('analysis_summary') ||
+            data.hasOwnProperty('insights') ||
+            data.hasOwnProperty('recommendations')
+        );
     },
 
     parseAnalyticsData(analyticsData) {
@@ -179,6 +225,7 @@ const AnalyticsParser = {
         return jsonData;
     }
 };
+
 
 // ============================================
 // Chart Renderer
@@ -344,23 +391,42 @@ const UIRenderer = {
         messages.forEach((msg, idx) => {
             Utils.log('UIRenderer', `Processing message ${idx}:`, msg);
 
-            const msgDiv = document.createElement('div');
-            msgDiv.className = `message ${msg.role}`;
-            msgDiv.innerHTML = `
-                <div class="message-content">${Utils.formatMessageContent(msg.content)}</div>
-                <div class="message-time">${new Date(msg.timestamp).toLocaleTimeString()}</div>
-            `;
-            container.appendChild(msgDiv);
-
             if (msg.role === 'assistant') {
-                // Always try to extract analytics data using AnalyticsParser
-                const jsonData = AnalyticsParser.extractAnalyticsData(msg.full_response || msg.content);
+                // Try extracting analytics data first
+                let jsonData = null;
+                
+                if (msg.full_response) {
+                    jsonData = AnalyticsParser.extractAnalyticsData(msg.full_response);
+                }
+                
+                // If no data found in full_response, try extracting from content
+                if (!jsonData && msg.content) {
+                    jsonData = AnalyticsParser.extractFromContentString(msg.content);
+                }
 
                 if (jsonData) {
+                    // This is analytics output - render charts only, skip text content
+                    Utils.log('UIRenderer', 'Rendering charts for message', idx);
                     ChartRenderer.renderAnalysisChart(jsonData, container);
                 } else {
-                    Utils.log('UIRenderer', 'No analytics_output found; skipping chart rendering.');
+                    // Regular message - render normally
+                    const msgDiv = document.createElement('div');
+                    msgDiv.className = `message ${msg.role}`;
+                    msgDiv.innerHTML = `
+                        <div class="message-content">${Utils.formatMessageContent(msg.content)}</div>
+                        <div class="message-time">${new Date(msg.timestamp).toLocaleTimeString()}</div>
+                    `;
+                    container.appendChild(msgDiv);
                 }
+            } else {
+                // User messages always render normally
+                const msgDiv = document.createElement('div');
+                msgDiv.className = `message ${msg.role}`;
+                msgDiv.innerHTML = `
+                    <div class="message-content">${Utils.formatMessageContent(msg.content)}</div>
+                    <div class="message-time">${new Date(msg.timestamp).toLocaleTimeString()}</div>
+                `;
+                container.appendChild(msgDiv);
             }
         });
 
