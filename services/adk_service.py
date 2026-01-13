@@ -1,7 +1,7 @@
 import requests
 import re
 import json
-from typing import Dict, Optional, Tuple
+from typing import Optional, Tuple, Generator
 import logging
 from datetime import datetime
 
@@ -158,6 +158,63 @@ class ADKService:
 
         return messages
 
+    def send_message_stream(self, agent: str, user_id: str, session_id: str, 
+                           message: str) -> Generator[dict, None, None]:
+        """
+        Stream SSE events from ADK /run_sse endpoint.
+        Yields each event as a dictionary.
+        """
+        payload = {
+            'appName': agent,
+            'userId': user_id,
+            'sessionId': session_id,
+            'newMessage': {
+                'role': 'user',
+                'parts': [{'text': message}]
+            },
+            'streaming': True  # Enable token-level streaming
+        }
+        
+        try:
+            logger.info(f"[SSE] Starting stream for session {session_id}")
+            
+            response = requests.post(
+                f'{self.api_base}/run_sse',
+                json=payload,
+                stream=True,  # CRITICAL: Enable streaming
+                timeout=600,
+                headers={'Accept': 'text/event-stream'}
+            )
+            response.raise_for_status()
+            
+            # Process SSE stream line by line
+            for line in response.iter_lines(decode_unicode=True):
+                if line:
+                    line = line.strip()
+                    if line.startswith('data: '):
+                        event_data = line[6:]  # Remove 'data: ' prefix
+                        
+                        if not event_data.strip():
+                            continue
+                        
+                        try:
+                            event = json.loads(event_data)
+                            yield event
+                        except json.JSONDecodeError as e:
+                            logger.error(f"[SSE] Failed to parse event: {e}")
+                            continue
+            
+            logger.info(f"[SSE] Stream completed for session {session_id}")
+            
+        except requests.Timeout:
+            logger.error("[SSE] Stream timed out")
+            yield {'error': 'timeout', 'message': 'Request timed out'}
+        except requests.RequestException as e:
+            logger.error(f"[SSE] Stream error: {e}")
+            yield {'error': 'request_failed', 'message': str(e)}
+        except Exception as e:
+            logger.error(f"[SSE] Unexpected error: {e}")
+            yield {'error': 'unknown', 'message': str(e)}
     
     def send_message(self, agent: str, user_id: str, session_id: str, 
                     message: str) -> Tuple[Optional[str], Optional[dict]]:

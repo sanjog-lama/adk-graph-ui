@@ -114,7 +114,89 @@ const ApiService = {
             method: 'POST',
             body: JSON.stringify({ agent, userId, sessionId, message })
         });
-    }
+    },
+
+    async sendMessageStreaming(agent, userId, sessionId, message, callbacks) {
+        const { onEvent, onComplete, onError } = callbacks;
+        let completed = false; // ✅ flag to ensure single completion
+
+        try {
+            const response = await fetch('/api/send-message-sse', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ agent, userId, sessionId, message })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+
+                if (done) {
+                    Utils.log('SSE', 'Stream reader done');
+                    // Only call onComplete once
+                    if (!completed && onComplete) {
+                        completed = true;
+                        onComplete();
+                    }
+                    break;
+                }
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop(); // keep incomplete line
+
+                for (const line of lines) {
+                    if (!line.startsWith('data: ')) continue;
+
+                    const data = line.slice(6).trim();
+                    if (!data) continue;
+
+                    try {
+                        const event = JSON.parse(data);
+
+                        if (event.type === 'error') {
+                            Utils.error('SSE', 'Error event:', event.message);
+                            if (onError) onError(new Error(event.message));
+                            break;
+                        }
+
+                        if (event.type === 'complete') {
+                            Utils.log('SSE', 'Received completion event');
+                            if (!completed && onComplete) {
+                                completed = true;
+                                onComplete();
+                            }
+                            break;
+                        }
+
+                        if (onEvent) onEvent(event);
+
+                    } catch (err) {
+                        Utils.error('SSE', 'Failed to parse event:', err, data);
+                    }
+                }
+            }
+        } catch (error) {
+            Utils.error('SSE', 'Streaming error:', error);
+            if (onError) onError(error);
+            throw error;
+        }
+    },
+
+    // KEEP: Original non-streaming method for backward compatibility
+    async sendMessage(agent, userId, sessionId, message) {
+        return await this.fetchWithError('/api/send-message', {
+            method: 'POST',
+            body: JSON.stringify({ agent, userId, sessionId, message })
+        });
+    },
 };
 
 // ============================================
@@ -123,7 +205,6 @@ const ApiService = {
 
 const AnalyticsParser = {
     extractAnalyticsData(fullResponse) {
-        // Case 1: Try extracting from full_response array structure
         if (fullResponse && Array.isArray(fullResponse)) {
             for (const event of fullResponse) {
                 const possiblePaths = [
@@ -134,25 +215,22 @@ const AnalyticsParser = {
 
                 for (const data of possiblePaths) {
                     if (data !== undefined && data !== null) {
-                        Utils.log('AnalyticsParser', 'Found analytics_output in full_response:', data);
+                        Utils.log('AnalyticsParser', 'Found analytics_output in full_response');
                         return this.parseAnalyticsData(data);
                     }
                 }
             }
         }
         
-        // Case 2: Try extracting from message content string
         if (typeof fullResponse === 'string') {
-            Utils.log('AnalyticsParser', 'Attempting to extract from content string');
             return this.extractFromContentString(fullResponse);
         }
 
-        Utils.log('AnalyticsParser', 'No analytics_output found');
         return null;
     },
 
     extractFromContentString(content) {
-        // 1️⃣ Try fenced ```json blocks first (existing behavior)
+        // Try fenced ```json blocks first
         const codeBlockRegex = /```json\s*([\s\S]*?)\s*```/g;
         const matches = [...content.matchAll(codeBlockRegex)];
 
@@ -166,7 +244,7 @@ const AnalyticsParser = {
             } catch (e) {}
         }
 
-        // 2️⃣ Fallback: extract LAST JSON object in text
+        // Fallback: extract LAST JSON object
         try {
             const jsonMatch = content.match(/\{[\s\S]*\}$/);
             if (jsonMatch) {
@@ -176,15 +254,12 @@ const AnalyticsParser = {
                     return parsed;
                 }
             }
-        } catch (err) {
-            Utils.error('AnalyticsParser', 'Raw JSON parse failed', err);
-        }
+        } catch (err) {}
 
         return null;
     },
 
     isAnalyticsData(data) {
-        // Check if the parsed JSON has analytics-specific fields
         return data && typeof data === 'object' && (
             data.hasOwnProperty('visualization_hints') ||
             data.hasOwnProperty('analysis_summary') ||
@@ -194,35 +269,28 @@ const AnalyticsParser = {
     },
 
     parseAnalyticsData(analyticsData) {
-        let jsonData = null;
-
         if (typeof analyticsData === 'object' && analyticsData !== null) {
-            jsonData = analyticsData;
-            Utils.log('AnalyticsParser', 'Analytics data is already an object');
-        } else if (typeof analyticsData === 'string') {
+            return analyticsData;
+        }
+        
+        if (typeof analyticsData === 'string') {
             const codeBlockRegex = /```json([\s\S]*?)```/;
             const match = analyticsData.match(codeBlockRegex);
             let jsonString = match?.[1] || analyticsData;
 
             try {
-                jsonData = JSON.parse(jsonString.trim());
-                Utils.log('AnalyticsParser', 'Successfully parsed analytics data as JSON');
+                return JSON.parse(jsonString.trim());
             } catch (err) {
-                Utils.error('AnalyticsParser', 'Failed to parse JSON:', err);
                 try {
                     const fixedJson = jsonString.replace(/,(\s*[}\]])/g, '$1').trim();
-                    jsonData = JSON.parse(fixedJson);
-                    Utils.log('AnalyticsParser', 'Successfully parsed JSON after fixing common issues');
+                    return JSON.parse(fixedJson);
                 } catch (err2) {
-                    Utils.error('AnalyticsParser', 'Still failed after fixing:', err2);
-                    jsonData = null;
+                    return null;
                 }
             }
-        } else {
-            Utils.error('AnalyticsParser', 'analyticsData is neither object nor string', analyticsData);
         }
 
-        return jsonData;
+        return null;
     }
 };
 
@@ -233,8 +301,7 @@ const AnalyticsParser = {
 
 const ChartRenderer = {
     renderAnalysisChart(jsonData, container) {
-        Utils.log('ChartRenderer', '==== RENDERING CHARTS WITH DATA ====');
-        Utils.log('ChartRenderer', 'Full JSON Data:', jsonData);
+        Utils.log('ChartRenderer', 'Rendering charts with data');
 
         if (jsonData.analysis_summary) {
             this.renderTextBlock('Analysis Summary', jsonData.analysis_summary, container);
@@ -283,7 +350,6 @@ const ChartRenderer = {
     renderCharts(visualizationHints, container) {
         const baseId = Date.now();
         visualizationHints.forEach((chart, idx) => {
-            Utils.log(`ChartRenderer[${idx}]`, 'Creating chart:', chart);
             const chartDiv = document.createElement('div');
             chartDiv.className = 'chart-container';
             const chartId = `chart-${baseId}-${idx}`;
@@ -296,10 +362,7 @@ const ChartRenderer = {
 
     renderSingleChart(chart, chartId) {
         const chartContainer = document.getElementById(chartId);
-        if (!chartContainer) {
-            Utils.error('ChartRenderer', `Chart container ${chartId} not found`);
-            return;
-        }
+        if (!chartContainer) return;
 
         const plotData = this.createPlotData(chart);
         const layout = this.createChartLayout(chart.title);
@@ -321,7 +384,6 @@ const ChartRenderer = {
             case 'line':
                 return [{ ...baseConfig, x: chart.x, y: chart.y, type: 'scatter', mode: 'lines+markers' }];
             default:
-                Utils.error('ChartRenderer', `Unknown chart type: ${chart.chart_type}`);
                 return [];
         }
     },
@@ -367,8 +429,7 @@ const UIRenderer = {
 
         container.querySelectorAll('.session-item').forEach(item => {
             item.addEventListener('click', () => {
-                const sessionId = item.dataset.sessionId;
-                onSessionClick(sessionId);
+                onSessionClick(item.dataset.sessionId);
             });
         });
     },
@@ -388,30 +449,23 @@ const UIRenderer = {
             return;
         }
 
-        messages.forEach((msg, idx) => {
-            Utils.log('UIRenderer', `Processing message ${idx}:`, msg);
-
+        messages.forEach((msg) => {
             if (msg.role === 'assistant') {
-                // Try extracting analytics data first
                 let jsonData = null;
                 
                 if (msg.full_response) {
                     jsonData = AnalyticsParser.extractAnalyticsData(msg.full_response);
                 }
                 
-                // If no data found in full_response, try extracting from content
                 if (!jsonData && msg.content) {
                     jsonData = AnalyticsParser.extractFromContentString(msg.content);
                 }
 
                 if (jsonData) {
-                    // This is analytics output - render charts only, skip text content
-                    Utils.log('UIRenderer', 'Rendering charts for message', idx);
                     ChartRenderer.renderAnalysisChart(jsonData, container);
                 } else {
-                    // Regular message - render normally
                     const msgDiv = document.createElement('div');
-                    msgDiv.className = `message ${msg.role}`;
+                    msgDiv.className = 'message assistant';
                     msgDiv.innerHTML = `
                         <div class="message-content">${Utils.formatMessageContent(msg.content)}</div>
                         <div class="message-time">${new Date(msg.timestamp).toLocaleTimeString()}</div>
@@ -419,9 +473,8 @@ const UIRenderer = {
                     container.appendChild(msgDiv);
                 }
             } else {
-                // User messages always render normally
                 const msgDiv = document.createElement('div');
-                msgDiv.className = `message ${msg.role}`;
+                msgDiv.className = 'message user';
                 msgDiv.innerHTML = `
                     <div class="message-content">${Utils.formatMessageContent(msg.content)}</div>
                     <div class="message-time">${new Date(msg.timestamp).toLocaleTimeString()}</div>
@@ -431,16 +484,6 @@ const UIRenderer = {
         });
 
         container.scrollTop = container.scrollHeight;
-    },
-
-    renderMessage(msg, container) {
-        const messageDiv = document.createElement('div');
-        messageDiv.className = `message ${msg.role}`;
-        messageDiv.innerHTML = `
-            <div class="message-content">${Utils.formatMessageContent(msg.content)}</div>
-            <div class="message-time">${new Date(msg.timestamp).toLocaleTimeString()}</div>
-        `;
-        container.appendChild(messageDiv);
     },
 
     updateUIState(isSessionSelected) {
@@ -563,47 +606,174 @@ const AppController = {
         }
     },
 
+    // NEW: SSE-based sendMessage
     async sendMessage(message) {
         if (!message || !AppState.currentSessionId) return;
 
         const input = document.getElementById('messageInput');
         const sendBtn = document.getElementById('sendBtn');
+        const messagesContainer = document.getElementById('messagesContainer');
 
         sendBtn.disabled = true;
         sendBtn.innerHTML = '<span class="loading"></span>';
         input.disabled = true;
 
+        // Add user message immediately
+        const userMessage = {
+            role: 'user',
+            content: message,
+            timestamp: new Date().toISOString()
+        };
+        
+        AppState.sessions[AppState.currentSessionId].messages.push(userMessage);
+        
+        // Render user message
+        const userMsgDiv = document.createElement('div');
+        userMsgDiv.className = 'message user';
+        userMsgDiv.innerHTML = `
+            <div class="message-content">${Utils.formatMessageContent(message)}</div>
+            <div class="message-time">${new Date().toLocaleTimeString()}</div>
+        `;
+        messagesContainer.appendChild(userMsgDiv);
+        input.value = '';
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+        // Track current message being streamed
+        let currentMessageDiv = null;
+        let currentContent = '';
+        let fullResponse = [];
+        let eventCounter = 0;
+
         try {
-            AppState.sessions[AppState.currentSessionId].messages.push({
-                role: 'user',
-                content: message,
-                timestamp: new Date().toISOString()
-            });
-
-            UIRenderer.renderMessages(AppState.sessions[AppState.currentSessionId].messages);
-            input.value = '';
-
-            const response = await ApiService.sendMessage(
+            await ApiService.sendMessageStreaming(
                 AppState.currentAgent,
                 AppState.currentUserId,
                 AppState.currentSessionId,
-                message
-            );
+                message,
+                {
+                    onEvent: (event) => {
+                        Utils.log('SSE Event', event);
+                        fullResponse.push(event);
+                        eventCounter++;
 
-            if (response.status === 'success' && response.response) {
-                AppState.sessions[AppState.currentSessionId].messages.push({
-                    role: 'assistant',
-                    content: response.response,
-                    full_response: response.full_response,
-                    timestamp: new Date().toISOString()
-                });
-                UIRenderer.renderMessages(AppState.sessions[AppState.currentSessionId].messages);
-            } else {
-                Utils.showNotification('Failed to get response from agent', 'error');
-            }
-        } catch {
+                        const content = event.content?.parts;
+                        if (content && Array.isArray(content)) {
+                            for (const part of content) {
+                                // ONLY handle text responses - skip tool calls and responses
+                                if (part.text) {
+                                    if (!currentMessageDiv) {
+                                        // First text event - create initial message div
+                                        currentMessageDiv = document.createElement('div');
+                                        currentMessageDiv.className = 'message assistant';
+                                        currentMessageDiv.innerHTML = `
+                                            <div class="message-content"></div>
+                                            <div class="message-time">${new Date().toLocaleTimeString()}</div>
+                                        `;
+                                        messagesContainer.appendChild(currentMessageDiv);
+                                        currentContent = ''; // Reset content for new div
+                                    }
+                                    
+                                    // Append text to current message
+                                    currentContent += part.text;
+                                    const contentElement = currentMessageDiv.querySelector('.message-content');
+                                    contentElement.innerHTML = Utils.formatMessageContent(currentContent);
+                                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                                }
+                                
+                                // Silently handle function calls (don't show in UI)
+                                if (part.functionCall) {
+                                    Utils.log('Tool Call', `Calling ${part.functionCall.name}`);
+                                    // After a tool call, prepare for a new text message
+                                    if (currentContent.trim()) {
+                                        currentMessageDiv = null;
+                                        currentContent = '';
+                                    }
+                                }
+                                
+                                // Silently handle function responses (don't show in UI)
+                                if (part.functionResponse) {
+                                    Utils.log('Tool Result', `${part.functionResponse.name} completed`);
+                                    // After a tool response, prepare for a new text message
+                                    currentMessageDiv = null;
+                                    currentContent = '';
+                                }
+                            }
+                        }
+                    },
+                    
+                    onComplete: () => {
+                        Utils.log('SSE', 'Stream completed');
+                        Utils.log('Analytics Check', 'Current content:', currentContent.substring(0, 100) + '...');
+                        
+                        // Check for analytics data BEFORE storing the message
+                        let jsonData = AnalyticsParser.extractAnalyticsData(fullResponse);
+                        if (!jsonData && currentContent) {
+                            jsonData = AnalyticsParser.extractFromContentString(currentContent);
+                        }
+
+                        if (jsonData) {
+                            Utils.log('Analytics', 'Found analytics data, will render charts only');
+                            
+                            // Remove the current message div that contains JSON
+                            if (currentMessageDiv) {
+                                Utils.log('Analytics', 'Removing JSON message div');
+                                currentMessageDiv.remove();
+                            }
+                            
+                            // Store message WITHOUT the JSON content (empty or with a marker)
+                            const assistantMessage = {
+                                role: 'assistant',
+                                content: '[Analytics Chart Rendered]', // Placeholder text
+                                full_response: fullResponse,
+                                timestamp: new Date().toISOString(),
+                                isAnalytics: true // Flag to identify analytics messages
+                            };
+                            AppState.sessions[AppState.currentSessionId].messages.push(assistantMessage);
+                            
+                            // Render charts
+                            ChartRenderer.renderAnalysisChart(jsonData, messagesContainer);
+                        } else {
+                            Utils.log('Analytics', 'No analytics data, storing normal message');
+                            
+                            // Store complete message normally
+                            const assistantMessage = {
+                                role: 'assistant',
+                                content: currentContent,
+                                full_response: fullResponse,
+                                timestamp: new Date().toISOString()
+                            };
+                            AppState.sessions[AppState.currentSessionId].messages.push(assistantMessage);
+                        }
+
+                        // Re-enable input
+                        sendBtn.disabled = false;
+                        sendBtn.textContent = 'Send';
+                        input.disabled = false;
+                        input.focus();
+                    },
+                    
+                    onError: (error) => {
+                        Utils.showNotification('Failed to get streaming response', 'error');
+                        
+                        const errorDiv = document.createElement('div');
+                        errorDiv.className = 'message assistant error-message';
+                        errorDiv.innerHTML = `
+                            <div class="message-content">
+                                <span style="color: red;">Error: Failed to get response</span>
+                            </div>
+                            <div class="message-time">${new Date().toLocaleTimeString()}</div>
+                        `;
+                        messagesContainer.appendChild(errorDiv);
+                        
+                        sendBtn.disabled = false;
+                        sendBtn.textContent = 'Send';
+                        input.disabled = false;
+                    }
+                }
+            );
+        } catch (error) {
             Utils.showNotification('Failed to send message', 'error');
-        } finally {
+            
             sendBtn.disabled = false;
             sendBtn.textContent = 'Send';
             input.disabled = false;

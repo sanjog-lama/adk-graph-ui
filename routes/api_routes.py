@@ -1,4 +1,5 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, Response
+import json
 import traceback
 from utils.logger import setup_logger
 
@@ -118,6 +119,85 @@ def create_api_blueprint(adk_service, session_service):
             print(traceback.format_exc())
             return jsonify({'status': 'error', 'message': str(e)}), 500
     
+    @api_bp.route('/send-message-sse', methods=['POST'])
+    def send_message_sse():
+        """SSE endpoint that streams events from ADK to frontend."""
+        try:
+            data = request.json
+            agent = data['agent']
+            user_id = data['userId']
+            session_id = data['sessionId']
+            message = data['message']
+            
+            logger.info(f"[SSE] Starting stream - agent: {agent}, session: {session_id}")
+            
+            # Add user message immediately
+            session_service.add_message(agent, user_id, session_id, 'user', message)
+            
+            def generate():
+                full_response = []
+                assistant_text = ""
+                
+                try:
+                    # Stream events from ADK
+                    for event in adk_service.send_message_stream(agent, user_id, session_id, message):
+                        # Handle errors
+                        if 'error' in event:
+                            error_event = {
+                                'type': 'error',
+                                'error': event.get('error'),
+                                'message': event.get('message', 'Unknown error')
+                            }
+                            yield f"data: {json.dumps(error_event)}\n\n"
+                            break
+                        
+                        # Store full response
+                        full_response.append(event)
+                        
+                        # Extract text content
+                        content = event.get('content', {})
+                        if isinstance(content, dict):
+                            parts = content.get('parts', [])
+                            if isinstance(parts, list):
+                                for part in parts:
+                                    if isinstance(part, dict) and 'text' in part:
+                                        assistant_text += part['text']
+                        
+                        # Forward event to frontend
+                        yield f"data: {json.dumps(event)}\n\n"
+                    
+                    # Save assistant message after stream completes
+                    if assistant_text:
+                        session_service.add_message(
+                            agent, user_id, session_id,
+                            'assistant', assistant_text, full_response
+                        )
+                        logger.info(f"[SSE] Saved assistant message to session {session_id}")
+                    
+                    # Send completion event
+                    yield f"data: {json.dumps({'type': 'complete'})}\n\n"
+                    
+                except Exception as e:
+                    logger.error(f"[SSE] Stream error: {e}")
+                    logger.error(traceback.format_exc())
+                    error_event = {'type': 'error', 'message': str(e)}
+                    yield f"data: {json.dumps(error_event)}\n\n"
+            
+            return Response(
+                generate(),
+                mimetype='text/event-stream',
+                headers={
+                    'Cache-Control': 'no-cache',
+                    'X-Accel-Buffering': 'no',
+                    'Connection': 'keep-alive'
+                }
+            )
+                
+        except Exception as e:
+            logger.error(f"[SSE] Error: {e}")
+            logger.error(traceback.format_exc())
+            return jsonify({'status': 'error', 'message': str(e)}), 500
+
     return api_bp
 
 
