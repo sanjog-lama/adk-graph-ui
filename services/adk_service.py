@@ -168,13 +168,12 @@ class ADKService:
             'newMessage': {
                 'role': 'user',
                 'parts': [{'text': message}]
-            },
-            "streaming": True,
+            }
         }
         
         try:
             response = requests.post(
-                f'{self.api_base}/run_sse',
+                f'{self.api_base}/run',
                 json=payload,
                 timeout=600
             )
