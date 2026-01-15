@@ -140,7 +140,6 @@ const ApiService = {
 
                 if (done) {
                     Utils.log('SSE', 'Stream reader done');
-                    // Only call onComplete once
                     if (!completed && onComplete) {
                         completed = true;
                         onComplete();
@@ -150,7 +149,7 @@ const ApiService = {
 
                 buffer += decoder.decode(value, { stream: true });
                 const lines = buffer.split('\n');
-                buffer = lines.pop(); // keep incomplete line
+                buffer = lines.pop();
 
                 for (const line of lines) {
                     if (!line.startsWith('data: ')) continue;
@@ -188,15 +187,7 @@ const ApiService = {
             if (onError) onError(error);
             throw error;
         }
-    },
-
-    // KEEP: Original non-streaming method for backward compatibility
-    async sendMessage(agent, userId, sessionId, message) {
-        return await this.fetchWithError('/api/send-message', {
-            method: 'POST',
-            body: JSON.stringify({ agent, userId, sessionId, message })
-        });
-    },
+    }
 };
 
 // ============================================

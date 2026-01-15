@@ -28,7 +28,7 @@ def setup_logger(name=None):
     # File handler
     file_handler = RotatingFileHandler(
         'logs/adk_chat_ui.log',
-        maxBytes=10485760,  # 10MB
+        maxBytes=10485760,
         backupCount=5
     )
     file_handler.setLevel(logging.INFO)
