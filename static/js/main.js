@@ -237,12 +237,18 @@ const AnalyticsParser = {
 
         // Fallback: extract LAST JSON object
         try {
-            const jsonMatch = content.match(/\{[\s\S]*\}$/);
-            if (jsonMatch) {
-                const parsed = JSON.parse(jsonMatch[0]);
-                if (this.isAnalyticsData(parsed)) {
-                    Utils.log('AnalyticsParser', 'Extracted analytics from raw JSON');
-                    return parsed;
+            const jsonObjectRegex = /\{[\s\S]*?\}(?=\s*\{|\s*$)/g;
+            const matches = content.match(jsonObjectRegex) || [];
+
+            for (let i = matches.length - 1; i >= 0; i--) {
+                try {
+                    const parsed = JSON.parse(matches[i]);
+                    if (this.isAnalyticsData(parsed)) {
+                        Utils.log('AnalyticsParser', 'Extracted analytics from multiple JSON blocks');
+                        return parsed;
+                    }
+                } catch (e) {
+                    // continue
                 }
             }
         } catch (err) {}
@@ -550,7 +556,7 @@ const AppController = {
                 ...AppState.sessions[sessionId],
                 messages: sessionData.messages || []
             };
-
+            // console.log('Loaded messages for session', sessionId, AppState.sessions[sessionId].messages);
             UIRenderer.renderMessages(AppState.sessions[sessionId].messages);
         } catch {
             Utils.showNotification('Failed to load session messages', 'error');
@@ -697,8 +703,13 @@ const AppController = {
                         Utils.log('Analytics Check', 'Current content:', currentContent.substring(0, 100) + '...');
                         
                         // Check for analytics data BEFORE storing the message
-                        let jsonData = AnalyticsParser.extractAnalyticsData(fullResponse);
-                        if (!jsonData && currentContent) {
+                        let jsonData = null;
+
+                        // 1️⃣ Always prefer structured analytics from SSE events
+                        jsonData = AnalyticsParser.extractAnalyticsData(fullResponse);
+
+                        // 2️⃣ Fallback ONLY if SSE did not contain analytics
+                        if (!jsonData && currentContent?.trim().startsWith('{')) {
                             jsonData = AnalyticsParser.extractFromContentString(currentContent);
                         }
 
