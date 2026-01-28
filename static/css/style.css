@@ -183,7 +183,7 @@ body {
     letter-spacing: -0.5px;
 }
 
-.agent-selector {
+.agent-selector, .model-selector {
     width: 100%;
     padding: 12px 16px;
     border: none;
@@ -201,14 +201,17 @@ body {
     font-weight: 500;
 }
 
-.agent-selector:hover {
+.agent-selector:hover, .model-selector:hover {
     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
     transform: translateY(-1px);
 }
 
-.agent-selector:focus {
+.agent-selector:focus, .model-selector:focus {
     outline: 3px solid rgba(255,255,255,0.5);
     outline-offset: 2px;
+}
+.model-selector {
+    margin-top: 12px;
 }
 
 .sessions-container {

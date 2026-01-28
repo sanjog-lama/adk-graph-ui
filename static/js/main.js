@@ -4,6 +4,7 @@
 
 const AppState = {
     currentAgent: '',
+    currentModel: '',
     currentUserId: `user_1767786285796`,
     currentSessionId: null,
     sessions: {},
@@ -85,6 +86,63 @@ const ApiService = {
             Utils.error('API', error.message);
             throw error;
         }
+    },
+
+    /**
+     * List available models
+     * Uses real API call structure, but mocked response for now
+     */
+    async listModels() {
+        // ✅ REAL API CALL (enable later)
+        /*
+        const response = await fetch('https://test.com/v1/models', {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+                // 'Authorization': 'Bearer YOUR_API_KEY'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to fetch models: ${response.status}`);
+        }
+
+        return await response.json();
+        */
+
+        // 🧪 MOCK RESPONSE (EXACT COPY of real API)
+        return {
+            "data": [
+                {
+                    "id": "qwen3:8b",
+                    "name": "qwen3:8b",
+                    "object": "model",
+                    "owned_by": "ollama",
+                    "is_active": true
+                },
+                {
+                    "id": "deepseek-r1:8b",
+                    "name": "deepseek-r1:8b",
+                    "object": "model",
+                    "owned_by": "ollama",
+                    "is_active": true
+                },
+                {
+                    "id": "llama2:7b",
+                    "name": "llama2:7b",
+                    "object": "model",
+                    "owned_by": "ollama",
+                    "is_active": true
+                },
+                {
+                    "id": "arena-model",
+                    "name": "Arena Model",
+                    "object": "model",
+                    "owned_by": "arena",
+                    "is_active": true
+                }
+            ]
+        };
     },
 
     async listAgents() {
@@ -532,6 +590,36 @@ const AppController = {
         }
     },
 
+    /**
+     * Load models and populate selector
+     */
+    async loadModels() {
+        const selector = document.getElementById('modelSelector');
+        selector.disabled = true;
+        selector.innerHTML = '<option value="">Loading models...</option>';
+
+        try {
+            const result = await ApiService.listModels();
+
+            selector.innerHTML = '<option value="">Select Model...</option>';
+
+            result.data
+                .filter(model => model.is_active !== false) // safety
+                .forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model.id;
+                    option.textContent = model.name;
+                    selector.appendChild(option);
+                });
+
+            selector.disabled = false;
+        } catch (err) {
+            Utils.error('Models', err);
+            selector.innerHTML = '<option value="">Failed to load models</option>';
+            Utils.showNotification('Failed to load models', 'error');
+        }
+    },
+
     async loadSessions() {
         if (!AppState.currentAgent) return;
         try {
@@ -790,15 +878,22 @@ const AppController = {
             await this.sendMessage(message);
         });
 
+        document.getElementById('modelSelector').addEventListener('change', (e) => {
+            AppState.currentModel = e.target.value;
+            Utils.log('Model Selected', AppState.currentModel);
+        });
+
         document.getElementById('newSessionBtn').addEventListener('click', () => this.createNewSession());
         document.getElementById('deleteSessionBtn').addEventListener('click', () => this.deleteCurrentSession());
 
         document.getElementById('agentSelector').addEventListener('change', async (e) => {
             AppState.currentAgent = e.target.value;
+            AppState.currentModel = '';
             AppState.currentSessionId = null;
             AppState.sessions = {};
 
             if (AppState.currentAgent) {
+                await this.loadModels();
                 await this.loadSessions();
             } else {
                 UIRenderer.renderSessions(AppState.sessions, AppState.currentSessionId, this.selectSession.bind(this));
