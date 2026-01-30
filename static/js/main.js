@@ -4,7 +4,6 @@
 
 const AppState = {
     currentAgent: '',
-    currentModel: '',
     currentUserId: `user_1767786285796`,
     currentSessionId: null,
     sessions: {},
@@ -590,36 +589,6 @@ const AppController = {
         }
     },
 
-    /**
-     * Load models and populate selector
-     */
-    async loadModels() {
-        const selector = document.getElementById('modelSelector');
-        selector.disabled = true;
-        selector.innerHTML = '<option value="">Loading models...</option>';
-
-        try {
-            const result = await ApiService.listModels();
-
-            selector.innerHTML = '<option value="">Select Model...</option>';
-
-            result.data
-                .filter(model => model.is_active !== false) // safety
-                .forEach(model => {
-                    const option = document.createElement('option');
-                    option.value = model.id;
-                    option.textContent = model.name;
-                    selector.appendChild(option);
-                });
-
-            selector.disabled = false;
-        } catch (err) {
-            Utils.error('Models', err);
-            selector.innerHTML = '<option value="">Failed to load models</option>';
-            Utils.showNotification('Failed to load models', 'error');
-        }
-    },
-
     async loadSessions() {
         if (!AppState.currentAgent) return;
         try {
@@ -878,22 +847,15 @@ const AppController = {
             await this.sendMessage(message);
         });
 
-        document.getElementById('modelSelector').addEventListener('change', (e) => {
-            AppState.currentModel = e.target.value;
-            Utils.log('Model Selected', AppState.currentModel);
-        });
-
         document.getElementById('newSessionBtn').addEventListener('click', () => this.createNewSession());
         document.getElementById('deleteSessionBtn').addEventListener('click', () => this.deleteCurrentSession());
 
         document.getElementById('agentSelector').addEventListener('change', async (e) => {
             AppState.currentAgent = e.target.value;
-            AppState.currentModel = '';
             AppState.currentSessionId = null;
             AppState.sessions = {};
 
             if (AppState.currentAgent) {
-                await this.loadModels();
                 await this.loadSessions();
             } else {
                 UIRenderer.renderSessions(AppState.sessions, AppState.currentSessionId, this.selectSession.bind(this));
