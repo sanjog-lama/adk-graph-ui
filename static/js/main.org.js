@@ -20,16 +20,10 @@ const AppState = {
 // ============================================
 
 const Utils = {
-    /**
-     * Format message content with markdown
-     */
     formatMessageContent(content) {
         return marked.parse(content);
     },
 
-    /**
-     * Safe HTML template literal function
-     */
     html(strings, ...values) {
         return strings.reduce((result, str, i) => {
             const value = values[i] || '';
@@ -37,27 +31,18 @@ const Utils = {
         }, '');
     },
 
-    /**
-     * Escape HTML to prevent XSS
-     */
     escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
     },
 
-    /**
-     * Create DOM element from HTML string
-     */
     createElementFromHTML(htmlString) {
         const template = document.createElement('template');
         template.innerHTML = htmlString.trim();
         return template.content.firstChild;
     },
 
-    /**
-     * Show notification/alert
-     */
     showNotification(message, type = 'info') {
         if (type === 'error') {
             console.error('[Notification]', message);
@@ -67,16 +52,10 @@ const Utils = {
         }
     },
 
-    /**
-     * Log with timestamp
-     */
     log(context, ...args) {
         console.log(`[${context}]`, ...args);
     },
 
-    /**
-     * Error log with timestamp
-     */
     error(context, ...args) {
         console.error(`[${context}]`, ...args);
     }
@@ -87,9 +66,6 @@ const Utils = {
 // ============================================
 
 const ApiService = {
-    /**
-     * Fetch with error handling
-     */
     async fetchWithError(url, options = {}) {
         try {
             const response = await fetch(url, {
@@ -112,22 +88,70 @@ const ApiService = {
     },
 
     /**
-     * List available agents
+     * List available models
+     * Uses real API call structure, but mocked response for now
      */
+    async listModels() {
+        // ✅ REAL API CALL (enable later)
+        /*
+        const response = await fetch('https://test.com/v1/models', {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+                // 'Authorization': 'Bearer YOUR_API_KEY'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to fetch models: ${response.status}`);
+        }
+
+        return await response.json();
+        */
+
+        // 🧪 MOCK RESPONSE (EXACT COPY of real API)
+        return {
+            "data": [
+                {
+                    "id": "qwen3:8b",
+                    "name": "qwen3:8b",
+                    "object": "model",
+                    "owned_by": "ollama",
+                    "is_active": true
+                },
+                {
+                    "id": "deepseek-r1:8b",
+                    "name": "deepseek-r1:8b",
+                    "object": "model",
+                    "owned_by": "ollama",
+                    "is_active": true
+                },
+                {
+                    "id": "llama2:7b",
+                    "name": "llama2:7b",
+                    "object": "model",
+                    "owned_by": "ollama",
+                    "is_active": true
+                },
+                {
+                    "id": "arena-model",
+                    "name": "Arena Model",
+                    "object": "model",
+                    "owned_by": "arena",
+                    "is_active": true
+                }
+            ]
+        };
+    },
+
     async listAgents() {
         return await this.fetchWithError('/api/list-agents');
     },
 
-    /**
-     * Load sessions for current agent
-     */
     async loadSessions(agent, userId) {
         return await this.fetchWithError(`/api/sessions?agent=${agent}&user=${userId}`);
     },
 
-    /**
-     * Create new session
-     */
     async createSession(agent, userId, sessionId) {
         return await this.fetchWithError('/api/create-session', {
             method: 'POST',
@@ -135,9 +159,6 @@ const ApiService = {
         });
     },
 
-    /**
-     * Delete session
-     */
     async deleteSession(agent, userId, sessionId) {
         return await this.fetchWithError('/api/delete-session', {
             method: 'DELETE',
@@ -145,9 +166,6 @@ const ApiService = {
         });
     },
 
-    /**
-     * Send message to agent
-     */
     async sendMessage(agent, userId, sessionId, message) {
         return await this.fetchWithError('/api/send-message', {
             method: 'POST',
@@ -155,19 +173,9 @@ const ApiService = {
         });
     },
 
-    /**
-     * Get current user
-     */
-    async getCurrentUser() {
-        return await this.fetchWithError('/auth/current-user');
-    },
-
-    /**
-     * Send message with streaming (SSE)
-     */
     async sendMessageStreaming(agent, userId, sessionId, message, callbacks) {
         const { onEvent, onComplete, onError } = callbacks;
-        let completed = false;
+        let completed = false; // ✅ flag to ensure single completion
 
         try {
             const response = await fetch('/api/send-message-sse', {
@@ -244,9 +252,6 @@ const ApiService = {
 // ============================================
 
 const AnalyticsParser = {
-    /**
-     * Extract analytics data from full_response
-     */
     extractAnalyticsData(fullResponse) {
         if (fullResponse && Array.isArray(fullResponse)) {
             for (const event of fullResponse) {
@@ -317,9 +322,6 @@ const AnalyticsParser = {
         );
     },
 
-    /**
-     * Parse analytics data safely (handles strings, objects, and JSON code blocks)
-     */
     parseAnalyticsData(analyticsData) {
         if (typeof analyticsData === 'object' && analyticsData !== null) {
             return analyticsData;
@@ -346,33 +348,27 @@ const AnalyticsParser = {
     }
 };
 
+
 // ============================================
 // Chart Renderer
 // ============================================
 
 const ChartRenderer = {
-    /**
-     * Render analysis charts from JSON data
-     */
     renderAnalysisChart(jsonData, container) {
-        Utils.log('ChartRenderer', '==== RENDERING CHARTS WITH DATA ====');
+        Utils.log('ChartRenderer', 'Rendering charts with data');
 
-        // Render analysis summary
         if (jsonData.analysis_summary) {
             this.renderTextBlock('Analysis Summary', jsonData.analysis_summary, container);
         }
 
-        // Render insights
         if (jsonData.insights?.length > 0) {
             this.renderListBlock('Key Insights', jsonData.insights, container);
         }
 
-        // Render charts
         if (jsonData.visualization_hints?.length > 0) {
             this.renderCharts(jsonData.visualization_hints, container);
         }
 
-        // Render recommendations
         if (jsonData.recommendations?.length > 0) {
             this.renderListBlock('Recommendations', jsonData.recommendations, container);
         }
@@ -380,9 +376,6 @@ const ChartRenderer = {
         container.scrollTop = container.scrollHeight;
     },
 
-    /**
-     * Render text block with markdown
-     */
     renderTextBlock(title, content, container) {
         const blockDiv = document.createElement('div');
         blockDiv.className = 'message assistant';
@@ -395,9 +388,6 @@ const ChartRenderer = {
         container.appendChild(blockDiv);
     },
 
-    /**
-     * Render list block
-     */
     renderListBlock(title, items, container) {
         const listDiv = document.createElement('div');
         listDiv.className = 'message assistant';
@@ -411,9 +401,6 @@ const ChartRenderer = {
         container.appendChild(listDiv);
     },
 
-    /**
-     * Render charts from visualization hints
-     */
     renderCharts(visualizationHints, container) {
         const baseId = Date.now();
         visualizationHints.forEach((chart, idx) => {
@@ -427,9 +414,6 @@ const ChartRenderer = {
         });
     },
 
-    /**
-     * Render single chart
-     */
     renderSingleChart(chart, chartId) {
         const chartContainer = document.getElementById(chartId);
         if (!chartContainer) return;
@@ -439,9 +423,6 @@ const ChartRenderer = {
         Plotly.newPlot(chartContainer, plotData, layout);
     },
 
-    /**
-     * Create Plotly plot data based on chart type
-     */
     createPlotData(chart) {
         const baseConfig = { marker: { color: '#667eea' } };
         switch (chart.chart_type) {
@@ -461,9 +442,6 @@ const ChartRenderer = {
         }
     },
 
-    /**
-     * Create Plotly chart layout
-     */
     createChartLayout(title) {
         return {
             title: title,
@@ -480,9 +458,6 @@ const ChartRenderer = {
 // ============================================
 
 const UIRenderer = {
-    /**
-     * Render sessions in sidebar
-     */
     renderSessions(sessions, currentSessionId, onSessionClick) {
         const container = document.getElementById('sessionsContainer');
         const sessionIds = Object.keys(sessions);
@@ -513,9 +488,6 @@ const UIRenderer = {
         });
     },
 
-    /**
-     * Render messages in chat area
-     */
     renderMessages(messages) {
         const container = document.getElementById('messagesContainer');
         container.innerHTML = '';
@@ -568,9 +540,6 @@ const UIRenderer = {
         container.scrollTop = container.scrollHeight;
     },
 
-    /**
-     * Update chat UI state
-     */
     updateUIState(isSessionSelected) {
         const messageInput = document.getElementById('messageInput');
         const sendBtn = document.getElementById('sendBtn');
@@ -588,7 +557,7 @@ const UIRenderer = {
             deleteBtn.style.display = 'none';
             chatTitle.textContent = AppState.currentAgent 
                 ? `${AppState.currentAgent} - Select or create a session` 
-                : 'Welcome to BMG Chat';
+                : 'Welcome to ADK Chat';
         }
     }
 };
@@ -598,55 +567,16 @@ const UIRenderer = {
 // ============================================
 
 const AppController = {
-    /**
-     * Initialize the application
-     */
     async init() {
-        // Configure marked
         marked.setOptions(AppState.markedConfig);
-
-        // try {
-        //     const result = await ApiService.getCurrentUser();
-
-        //     if (result.authenticated) {
-        //         AppState.currentUser = result.user;
-
-        //         // Use stable ID for sessions
-        //         AppState.currentUserId =
-        //             result.user.sub ||
-        //             result.user.email ||
-        //             `user_${Date.now()}`;
-
-        //         if (AppState.currentUser) {
-        //             const userDiv = document.getElementById('userInfo');
-        //             userDiv.innerHTML = `
-        //                 <strong>${Utils.escapeHtml(AppState.currentUser.name)}</strong>
-        //                 (${Utils.escapeHtml(AppState.currentUser.email)})
-        //             `;
-        //         }
-
-        //         Utils.log('AUTH', 'Logged in user:', AppState.currentUser);
-        //         Utils.log('AUTH', 'currentUserId:', AppState.currentUserId);
-        //     }
-        // } catch (err) {
-        //     Utils.error('AUTH', 'User not authenticated');
-        //     // Optional: redirect to login
-        //     // window.location.href = '/login';
-        //     return;
-        // }
-
         await this.loadAgents();
         this.setupEventListeners();
     },
 
-    /**
-     * Load agents and populate selector
-     */
     async loadAgents() {
         try {
             const agents = await ApiService.listAgents();
             const selector = document.getElementById('agentSelector');
-            
             selector.innerHTML = '<option value="">Select Agent...</option>';
             agents.forEach(agent => {
                 const option = document.createElement('option');
@@ -654,14 +584,11 @@ const AppController = {
                 option.textContent = agent;
                 selector.appendChild(option);
             });
-        } catch (error) {
+        } catch {
             Utils.showNotification('Failed to load agents', 'error');
         }
     },
 
-    /**
-     * Load sessions for current agent
-     */
     async loadSessions() {
         if (!AppState.currentAgent) return;
         try {
@@ -672,9 +599,6 @@ const AppController = {
         }
     },
 
-    /**
-     * Select a session
-     */
     async selectSession(sessionId) {
         AppState.currentSessionId = sessionId;
         UIRenderer.renderSessions(AppState.sessions, AppState.currentSessionId, this.selectSession.bind(this));
@@ -689,16 +613,13 @@ const AppController = {
                 ...AppState.sessions[sessionId],
                 messages: sessionData.messages || []
             };
-
+            // console.log('Loaded messages for session', sessionId, AppState.sessions[sessionId].messages);
             UIRenderer.renderMessages(AppState.sessions[sessionId].messages);
         } catch {
             Utils.showNotification('Failed to load session messages', 'error');
         }
     },
 
-    /**
-     * Create new session
-     */
     async createNewSession() {
         if (!AppState.currentAgent) {
             Utils.showNotification('Please select an agent first', 'error');
@@ -715,9 +636,6 @@ const AppController = {
         }
     },
 
-    /**
-     * Delete current session
-     */
     async deleteCurrentSession() {
         if (!AppState.currentSessionId) return;
         if (!confirm('Delete this session?')) return;
@@ -742,9 +660,7 @@ const AppController = {
         }
     },
 
-    /**
-     * SSE-based Send message
-     */
+    // NEW: SSE-based sendMessage
     async sendMessage(message) {
         if (!message || !AppState.currentSessionId) return;
 
@@ -790,66 +706,54 @@ const AppController = {
                 message,
                 {
                     onEvent: (event) => {
-    Utils.log('SSE Event', event);
-    fullResponse.push(event);
-    eventCounter++;
+                        Utils.log('SSE Event', event);
+                        fullResponse.push(event);
+                        eventCounter++;
 
-    // 🔥 CHECK: Skip events with partial: false if we already have the content
-    // These are duplicate complete responses from the backend
-    if (event.partial === false && currentContent && event.content?.parts) {
-        // Check if any part contains text that's already in currentContent
-        for (const part of event.content.parts) {
-            if (part.text && currentContent.includes(part.text)) {
-                Utils.log('Deduplication', 'Skipping duplicate complete response (partial: false)');
-                return; // Skip this entire event
-            }
-        }
-    }
-
-    const content = event.content?.parts;
-    if (content && Array.isArray(content)) {
-        for (const part of content) {
-            // ONLY handle text responses - skip tool calls and responses
-            if (part.text) {
-                if (!currentMessageDiv) {
-                    // First text event - create initial message div
-                    currentMessageDiv = document.createElement('div');
-                    currentMessageDiv.className = 'message assistant';
-                    currentMessageDiv.innerHTML = `
-                        <div class="message-content"></div>
-                        <div class="message-time">${new Date().toLocaleTimeString()}</div>
-                    `;
-                    messagesContainer.appendChild(currentMessageDiv);
-                    currentContent = ''; // Reset content for new div
-                }
-                
-                // Append text to current message
-                currentContent += part.text;
-                const contentElement = currentMessageDiv.querySelector('.message-content');
-                contentElement.innerHTML = Utils.formatMessageContent(currentContent);
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
-            }
-            
-            // Silently handle function calls (don't show in UI)
-            if (part.functionCall) {
-                Utils.log('Tool Call', `Calling ${part.functionCall.name}`);
-                // After a tool call, prepare for a new text message
-                if (currentContent.trim()) {
-                    currentMessageDiv = null;
-                    currentContent = '';
-                }
-            }
-            
-            // Silently handle function responses (don't show in UI)
-            if (part.functionResponse) {
-                Utils.log('Tool Result', `${part.functionResponse.name} completed`);
-                // After a tool response, prepare for a new text message
-                currentMessageDiv = null;
-                currentContent = '';
-            }
-        }
-    }
-},
+                        const content = event.content?.parts;
+                        if (content && Array.isArray(content)) {
+                            for (const part of content) {
+                                // ONLY handle text responses - skip tool calls and responses
+                                if (part.text) {
+                                    if (!currentMessageDiv) {
+                                        // First text event - create initial message div
+                                        currentMessageDiv = document.createElement('div');
+                                        currentMessageDiv.className = 'message assistant';
+                                        currentMessageDiv.innerHTML = `
+                                            <div class="message-content"></div>
+                                            <div class="message-time">${new Date().toLocaleTimeString()}</div>
+                                        `;
+                                        messagesContainer.appendChild(currentMessageDiv);
+                                        currentContent = ''; // Reset content for new div
+                                    }
+                                    
+                                    // Append text to current message
+                                    currentContent += part.text;
+                                    const contentElement = currentMessageDiv.querySelector('.message-content');
+                                    contentElement.innerHTML = Utils.formatMessageContent(currentContent);
+                                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                                }
+                                
+                                // Silently handle function calls (don't show in UI)
+                                if (part.functionCall) {
+                                    Utils.log('Tool Call', `Calling ${part.functionCall.name}`);
+                                    // After a tool call, prepare for a new text message
+                                    if (currentContent.trim()) {
+                                        currentMessageDiv = null;
+                                        currentContent = '';
+                                    }
+                                }
+                                
+                                // Silently handle function responses (don't show in UI)
+                                if (part.functionResponse) {
+                                    Utils.log('Tool Result', `${part.functionResponse.name} completed`);
+                                    // After a tool response, prepare for a new text message
+                                    currentMessageDiv = null;
+                                    currentContent = '';
+                                }
+                            }
+                        }
+                    },
                     
                     onComplete: () => {
                         Utils.log('SSE', 'Stream completed');
@@ -936,9 +840,6 @@ const AppController = {
         }
     },
 
-    /**
-     * Set up all event listeners
-     */
     setupEventListeners() {
         document.getElementById('messageForm').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -969,7 +870,6 @@ const AppController = {
 // Initialize Application
 // ============================================
 
-// Start the application when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
     AppController.init().catch(error => {
         console.error('Failed to initialize application:', error);
