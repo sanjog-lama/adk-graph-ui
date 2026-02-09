@@ -938,3 +938,49 @@ body {
         border-width: 2px;
     }
 }
+
+.subtle-toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 12px 16px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 14px;
+    animation: slideUp 0.3s ease;
+    z-index: 1000;
+}
+
+.subtle-toast button {
+    background: #4CAF50;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+@keyframes slideUp {
+    from { transform: translateY(20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+.simple-error-notice {
+    display: flex;
+    gap: 12px;
+    padding: 12px;
+    background: #fff3cd;
+    border: 1px solid #ffeaa7;
+    border-radius: 8px;
+    margin: 8px 0;
+}
+
+.simple-error-notice .error-icon {
+    font-size: 20px;
+    margin-top: 2px;
+}

@@ -837,21 +837,57 @@ const AppController = {
                     },
                     
                     onError: (error) => {
-                        Utils.showNotification('Failed to get streaming response', 'error');
+                        console.error('Stream error:', error);
                         
+                        // Simple, clean error message without buttons
                         const errorDiv = document.createElement('div');
                         errorDiv.className = 'message assistant error-message';
                         errorDiv.innerHTML = `
                             <div class="message-content">
-                                <span style="color: red;">Error: Failed to get response</span>
+                                <div class="simple-error-notice">
+                                    <span class="error-icon">🔌</span>
+                                    <div>
+                                        <p><strong>Connection Interrupted</strong></p>
+                                        <p style="color: #666; font-size: 14px; margin: 4px 0;">
+                                            The server connection was lost. This usually happens when:
+                                        </p>
+                                        <ul style="color: #666; font-size: 13px; margin: 8px 0 0 20px;">
+                                            <li>Server is temporarily busy</li>
+                                            <li>MCP Server is temporarily unavailable</li>
+                                            <li>Your internet connection flickered</li>
+                                            <li>Request took too long to process</li>
+                                        </ul>
+                                        <p style="color: #666; font-size: 13px; margin: 12px 0 0 0;">
+                                            💡 <em>Try refreshing the page or asking again in a moment.</em>
+                                        </p>
+                                    </div>
+                                </div>
                             </div>
                             <div class="message-time">${new Date().toLocaleTimeString()}</div>
                         `;
-                        messagesContainer.appendChild(errorDiv);
                         
+                        messagesContainer.appendChild(errorDiv);
+                        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                        
+                        // Also show a subtle toast notification
+                        const toast = document.createElement('div');
+                        toast.className = 'subtle-toast';
+                        toast.innerHTML = `
+                            <span>🔌 Connection issue - try refreshing</span>
+                            <button onclick="location.reload()">Refresh</button>
+                        `;
+                        document.body.appendChild(toast);
+                        
+                        setTimeout(() => {
+                            toast.style.opacity = '0';
+                            setTimeout(() => toast.remove(), 300);
+                        }, 5000);
+                        
+                        // Re-enable UI
                         sendBtn.disabled = false;
                         sendBtn.textContent = 'Send';
                         input.disabled = false;
+                        input.focus();
                     }
                 }
             );
